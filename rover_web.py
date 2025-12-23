@@ -18,6 +18,7 @@ from rover import Rover
 from picamera2 import Picamera2
 from picamera2.encoders import MJPEGEncoder
 from picamera2.outputs import FileOutput
+import libcamera
 
 
 class StreamingOutput(io.BufferedIOBase):
@@ -604,7 +605,7 @@ def main():
     # Initialize camera
     print("Initializing camera...")
     picam2 = Picamera2()
-    video_config = picam2.create_video_configuration(main={"size": (640, 480)})
+    video_config = picam2.create_video_configuration(main={"size": (640, 480)}, transform=libcamera.Transform(hflip=True, vflip=True))
     picam2.configure(video_config)
     stream_output = StreamingOutput()
     picam2.start_recording(MJPEGEncoder(), FileOutput(stream_output))
