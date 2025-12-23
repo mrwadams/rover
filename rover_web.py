@@ -10,9 +10,28 @@ import sys
 sys.path.insert(0, '/home/edith/bcm2835-1.70/Motor_Driver_HAT_Code/Motor_Driver_HAT_Code/Raspberry Pi/python')
 
 from http.server import HTTPServer, BaseHTTPRequestHandler
+from threading import Condition
 import json
 import signal
+import io
 from rover import Rover
+from picamera2 import Picamera2
+from picamera2.encoders import MJPEGEncoder
+from picamera2.outputs import FileOutput
+
+
+class StreamingOutput(io.BufferedIOBase):
+    """Thread-safe output buffer for MJPEG streaming."""
+
+    def __init__(self):
+        self.frame = None
+        self.condition = Condition()
+
+    def write(self, buf):
+        with self.condition:
+            self.frame = buf
+            self.condition.notify_all()
+        return len(buf)
 
 # HTML page with embedded CSS and JavaScript
 HTML_PAGE = """<!DOCTYPE html>
@@ -54,6 +73,20 @@ HTML_PAGE = """<!DOCTYPE html>
         }
         .status.connected { border-left: 4px solid #00ff88; }
         .status.error { border-left: 4px solid #ff4757; }
+
+        .video-container {
+            background: #2d1f3d;
+            border-radius: 12px;
+            padding: 8px;
+            margin-bottom: 20px;
+            max-width: 400px;
+            width: 100%;
+        }
+        .video-container img {
+            width: 100%;
+            border-radius: 8px;
+            display: block;
+        }
 
         .controls {
             display: grid;
@@ -158,7 +191,8 @@ HTML_PAGE = """<!DOCTYPE html>
                 padding: 10px 20px;
                 flex-direction: row;
                 justify-content: center;
-                gap: 40px;
+                align-items: center;
+                gap: 20px;
                 min-height: 100vh;
             }
             h1 {
@@ -173,37 +207,49 @@ HTML_PAGE = """<!DOCTYPE html>
                 padding: 5px 15px;
                 font-size: 12px;
             }
+            .video-container {
+                margin: 0;
+                max-width: none;
+                width: auto;
+                height: calc(100vh - 40px);
+                padding: 6px;
+            }
+            .video-container img {
+                height: 100%;
+                width: auto;
+            }
             .controls {
                 margin: 0;
-                grid-template-columns: repeat(3, 70px);
-                grid-template-rows: repeat(3, 70px);
-                gap: 8px;
+                grid-template-columns: repeat(3, 60px);
+                grid-template-rows: repeat(3, 60px);
+                gap: 6px;
             }
             .btn {
-                font-size: 24px;
+                font-size: 22px;
             }
             .speed-control {
                 display: flex;
                 flex-direction: column;
                 justify-content: center;
-                padding: 15px;
-                width: 180px;
+                padding: 12px;
+                width: 100px;
                 height: auto;
             }
             .speed-control label {
                 margin-bottom: 8px;
+                font-size: 12px;
             }
             input[type="range"] {
                 height: 40px;
             }
             input[type="range"]::-webkit-slider-thumb {
-                width: 36px;
-                height: 36px;
-                margin-top: -14px;
+                width: 32px;
+                height: 32px;
+                margin-top: -12px;
             }
             input[type="range"]::-moz-range-thumb {
-                width: 36px;
-                height: 36px;
+                width: 32px;
+                height: 32px;
             }
             .keyboard-hint {
                 display: none;
@@ -213,23 +259,27 @@ HTML_PAGE = """<!DOCTYPE html>
         /* Even smaller landscape screens */
         @media screen and (max-height: 400px) and (orientation: landscape) {
             body {
-                gap: 30px;
+                gap: 15px;
+            }
+            .video-container {
+                height: calc(100vh - 30px);
+                padding: 4px;
             }
             .controls {
-                grid-template-columns: repeat(3, 60px);
-                grid-template-rows: repeat(3, 60px);
-                gap: 6px;
+                grid-template-columns: repeat(3, 50px);
+                grid-template-rows: repeat(3, 50px);
+                gap: 4px;
             }
             .btn {
-                font-size: 20px;
-                border-radius: 10px;
+                font-size: 18px;
+                border-radius: 8px;
             }
             .btn.stop {
-                font-size: 11px;
+                font-size: 10px;
             }
             .speed-control {
-                width: 150px;
-                padding: 10px;
+                width: 80px;
+                padding: 8px;
             }
         }
     </style>
@@ -238,6 +288,10 @@ HTML_PAGE = """<!DOCTYPE html>
     <h1>Rover Control</h1>
 
     <div class="status connected" id="status">Connected</div>
+
+    <div class="video-container">
+        <img src="/video_feed" alt="Camera feed">
+    </div>
 
     <div class="controls">
         <div></div>
@@ -438,6 +492,7 @@ class RoverHandler(BaseHTTPRequestHandler):
     """HTTP request handler for rover control."""
 
     rover = None  # Class-level rover instance
+    stream_output = None  # Class-level streaming output
 
     def log_message(self, format, *args):
         """Custom log format."""
@@ -458,6 +513,26 @@ class RoverHandler(BaseHTTPRequestHandler):
             self.send_header('Content-Type', 'text/html')
             self.end_headers()
             self.wfile.write(HTML_PAGE.encode())
+        elif self.path == '/video_feed':
+            self.send_response(200)
+            self.send_header('Age', '0')
+            self.send_header('Cache-Control', 'no-cache, private')
+            self.send_header('Pragma', 'no-cache')
+            self.send_header('Content-Type', 'multipart/x-mixed-replace; boundary=FRAME')
+            self.end_headers()
+            try:
+                while True:
+                    with self.stream_output.condition:
+                        self.stream_output.condition.wait()
+                        frame = self.stream_output.frame
+                    self.wfile.write(b'--FRAME\r\n')
+                    self.send_header('Content-Type', 'image/jpeg')
+                    self.send_header('Content-Length', len(frame))
+                    self.end_headers()
+                    self.wfile.write(frame)
+                    self.wfile.write(b'\r\n')
+            except Exception:
+                pass
         else:
             self.send_response(404)
             self.end_headers()
@@ -526,9 +601,20 @@ def main():
     rover = Rover()
     RoverHandler.rover = rover
 
+    # Initialize camera
+    print("Initializing camera...")
+    picam2 = Picamera2()
+    video_config = picam2.create_video_configuration(main={"size": (640, 480)})
+    picam2.configure(video_config)
+    stream_output = StreamingOutput()
+    picam2.start_recording(MJPEGEncoder(), FileOutput(stream_output))
+    RoverHandler.stream_output = stream_output
+    print("Camera streaming started")
+
     # Setup signal handlers for clean shutdown
     def shutdown(signum, frame):
         print("\nShutting down...")
+        picam2.stop_recording()
         rover.stop()
         sys.exit(0)
 
@@ -543,6 +629,7 @@ def main():
     try:
         server.serve_forever()
     finally:
+        picam2.stop_recording()
         rover.stop()
 
 
