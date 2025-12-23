@@ -31,7 +31,7 @@ HTML_PAGE = """<!DOCTYPE html>
         }
         body {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-            background: #1a1a2e;
+            background: #1a1025;
             color: #eee;
             margin: 0;
             padding: 20px;
@@ -43,10 +43,10 @@ HTML_PAGE = """<!DOCTYPE html>
         h1 {
             margin: 0 0 20px 0;
             font-size: 24px;
-            color: #00d9ff;
+            color: #a855f7;
         }
         .status {
-            background: #16213e;
+            background: #2d1f3d;
             padding: 10px 20px;
             border-radius: 8px;
             margin-bottom: 20px;
@@ -63,10 +63,10 @@ HTML_PAGE = """<!DOCTYPE html>
             margin-bottom: 30px;
         }
         .btn {
-            background: #0f3460;
-            border: 2px solid #00d9ff;
+            background: #3b1f5c;
+            border: 2px solid #a855f7;
             border-radius: 12px;
-            color: #00d9ff;
+            color: #a855f7;
             font-size: 28px;
             cursor: pointer;
             display: flex;
@@ -75,11 +75,11 @@ HTML_PAGE = """<!DOCTYPE html>
             transition: all 0.1s;
         }
         .btn:hover {
-            background: #1a4a7a;
+            background: #4c2875;
         }
         .btn:active, .btn.active {
-            background: #00d9ff;
-            color: #1a1a2e;
+            background: #a855f7;
+            color: #1a1025;
             transform: scale(0.95);
         }
         .btn.stop {
@@ -95,7 +95,7 @@ HTML_PAGE = """<!DOCTYPE html>
         }
 
         .speed-control {
-            background: #16213e;
+            background: #2d1f3d;
             padding: 20px;
             border-radius: 12px;
             width: 100%;
@@ -107,7 +107,7 @@ HTML_PAGE = """<!DOCTYPE html>
             font-size: 14px;
         }
         .speed-value {
-            color: #00d9ff;
+            color: #a855f7;
             font-weight: bold;
             font-size: 18px;
         }
@@ -119,27 +119,27 @@ HTML_PAGE = """<!DOCTYPE html>
         }
         input[type="range"]::-webkit-slider-runnable-track {
             height: 8px;
-            background: #0f3460;
+            background: #3b1f5c;
             border-radius: 4px;
         }
         input[type="range"]::-webkit-slider-thumb {
             -webkit-appearance: none;
             width: 28px;
             height: 28px;
-            background: #00d9ff;
+            background: #a855f7;
             border-radius: 50%;
             margin-top: -10px;
             cursor: pointer;
         }
         input[type="range"]::-moz-range-track {
             height: 8px;
-            background: #0f3460;
+            background: #3b1f5c;
             border-radius: 4px;
         }
         input[type="range"]::-moz-range-thumb {
             width: 28px;
             height: 28px;
-            background: #00d9ff;
+            background: #a855f7;
             border-radius: 50%;
             border: none;
             cursor: pointer;
