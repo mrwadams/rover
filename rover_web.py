@@ -10,15 +10,23 @@ import sys
 sys.path.insert(0, '/home/edith/bcm2835-1.70/Motor_Driver_HAT_Code/Motor_Driver_HAT_Code/Raspberry Pi/python')
 
 from http.server import HTTPServer, BaseHTTPRequestHandler
+from socketserver import ThreadingMixIn
 from threading import Condition
 import json
 import signal
 import io
 from rover import Rover
+
+
 from picamera2 import Picamera2
 from picamera2.encoders import MJPEGEncoder
 from picamera2.outputs import FileOutput
 import libcamera
+
+
+class ThreadingHTTPServer(ThreadingMixIn, HTTPServer):
+    """HTTP server that handles each request in a separate thread."""
+    daemon_threads = True
 
 
 class StreamingOutput(io.BufferedIOBase):
@@ -623,7 +631,7 @@ def main():
     signal.signal(signal.SIGTERM, shutdown)
 
     # Start server
-    server = HTTPServer(('0.0.0.0', port), RoverHandler)
+    server = ThreadingHTTPServer(('0.0.0.0', port), RoverHandler)
     print(f"Rover web control running at http://0.0.0.0:{port}")
     print("Press Ctrl+C to stop")
 
