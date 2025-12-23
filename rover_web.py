@@ -151,6 +151,87 @@ HTML_PAGE = """<!DOCTYPE html>
             color: #666;
             text-align: center;
         }
+
+        /* Landscape layout for mobile */
+        @media screen and (max-height: 500px) and (orientation: landscape) {
+            body {
+                padding: 10px 20px;
+                flex-direction: row;
+                justify-content: center;
+                gap: 40px;
+                min-height: 100vh;
+            }
+            h1 {
+                display: none;
+            }
+            .status {
+                position: absolute;
+                top: 10px;
+                left: 50%;
+                transform: translateX(-50%);
+                margin: 0;
+                padding: 5px 15px;
+                font-size: 12px;
+            }
+            .controls {
+                margin: 0;
+                grid-template-columns: repeat(3, 70px);
+                grid-template-rows: repeat(3, 70px);
+                gap: 8px;
+            }
+            .btn {
+                font-size: 24px;
+            }
+            .speed-control {
+                display: flex;
+                flex-direction: column;
+                justify-content: center;
+                padding: 15px;
+                width: 180px;
+                height: auto;
+            }
+            .speed-control label {
+                margin-bottom: 8px;
+            }
+            input[type="range"] {
+                height: 40px;
+            }
+            input[type="range"]::-webkit-slider-thumb {
+                width: 36px;
+                height: 36px;
+                margin-top: -14px;
+            }
+            input[type="range"]::-moz-range-thumb {
+                width: 36px;
+                height: 36px;
+            }
+            .keyboard-hint {
+                display: none;
+            }
+        }
+
+        /* Even smaller landscape screens */
+        @media screen and (max-height: 400px) and (orientation: landscape) {
+            body {
+                gap: 30px;
+            }
+            .controls {
+                grid-template-columns: repeat(3, 60px);
+                grid-template-rows: repeat(3, 60px);
+                gap: 6px;
+            }
+            .btn {
+                font-size: 20px;
+                border-radius: 10px;
+            }
+            .btn.stop {
+                font-size: 11px;
+            }
+            .speed-control {
+                width: 150px;
+                padding: 10px;
+            }
+        }
     </style>
 </head>
 <body>
