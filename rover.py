@@ -60,19 +60,19 @@ class Rover:
         if motor == 'left':
             self.pwm.setDutycycle(self.PWMA, speed)
             if direction == 'forward':
-                self.pwm.setLevel(self.AIN1, 0)
-                self.pwm.setLevel(self.AIN2, 1)
-            else:
                 self.pwm.setLevel(self.AIN1, 1)
                 self.pwm.setLevel(self.AIN2, 0)
-        else:  # right (reversed - motor is mirrored on chassis)
+            else:
+                self.pwm.setLevel(self.AIN1, 0)
+                self.pwm.setLevel(self.AIN2, 1)
+        else:  # right
             self.pwm.setDutycycle(self.PWMB, speed)
             if direction == 'forward':
-                self.pwm.setLevel(self.BIN1, 1)
-                self.pwm.setLevel(self.BIN2, 0)
-            else:
                 self.pwm.setLevel(self.BIN1, 0)
                 self.pwm.setLevel(self.BIN2, 1)
+            else:
+                self.pwm.setLevel(self.BIN1, 1)
+                self.pwm.setLevel(self.BIN2, 0)
 
     def forward(self, speed=None):
         """
