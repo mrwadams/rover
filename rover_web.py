@@ -15,7 +15,12 @@ from threading import Condition
 import json
 import signal
 import io
+import os
 from rover import Rover
+
+from google import genai
+from google.genai import types
+from dotenv import load_dotenv
 
 
 from picamera2 import Picamera2
@@ -135,6 +140,39 @@ HTML_PAGE = """<!DOCTYPE html>
             background: #ff4757;
             color: #1a1a2e;
         }
+
+        .vision-btn {
+            background: #1e3a5f;
+            border: 2px solid #3b82f6;
+            color: #3b82f6;
+            padding: 12px 24px;
+            font-size: 14px;
+            margin-bottom: 20px;
+            width: 100%;
+            max-width: 400px;
+        }
+        .vision-btn:hover { background: #234b7a; }
+        .vision-btn:active, .vision-btn.active {
+            background: #3b82f6;
+            color: #1a1025;
+        }
+        .vision-btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+        .vision-result {
+            background: #2d1f3d;
+            border-radius: 8px;
+            padding: 15px;
+            margin-bottom: 20px;
+            max-width: 400px;
+            width: 100%;
+            min-height: 60px;
+            font-size: 14px;
+            line-height: 1.5;
+            display: none;
+        }
+        .vision-result.visible { display: block; }
 
         .speed-control {
             background: #2d1f3d;
@@ -301,6 +339,9 @@ HTML_PAGE = """<!DOCTYPE html>
     <div class="video-container">
         <img src="/video_feed" alt="Camera feed">
     </div>
+
+    <button class="btn vision-btn" id="btn-vision">Describe Scene</button>
+    <div class="vision-result" id="vision-result"></div>
 
     <div class="controls">
         <div></div>
@@ -491,6 +532,32 @@ HTML_PAGE = """<!DOCTYPE html>
                 body: JSON.stringify({ speed: parseInt(speedSlider.value) })
             });
         });
+
+        // Vision analysis
+        const visionBtn = document.getElementById('btn-vision');
+        const visionResult = document.getElementById('vision-result');
+
+        visionBtn.addEventListener('click', async () => {
+            visionBtn.disabled = true;
+            visionBtn.textContent = 'Analyzing...';
+            visionResult.classList.add('visible');
+            visionResult.textContent = 'Processing...';
+
+            try {
+                const response = await fetch('/api/vision', { method: 'POST' });
+                const data = await response.json();
+                if (data.status === 'ok') {
+                    visionResult.textContent = data.description;
+                } else {
+                    visionResult.textContent = 'Error: ' + data.error;
+                }
+            } catch (e) {
+                visionResult.textContent = 'Connection error';
+            }
+
+            visionBtn.disabled = false;
+            visionBtn.textContent = 'Describe Scene';
+        });
     </script>
 </body>
 </html>
@@ -502,6 +569,7 @@ class RoverHandler(BaseHTTPRequestHandler):
 
     rover = None  # Class-level rover instance
     stream_output = None  # Class-level streaming output
+    gemini_client = None  # Class-level Gemini client
 
     def log_message(self, format, *args):
         """Custom log format."""
@@ -589,6 +657,32 @@ class RoverHandler(BaseHTTPRequestHandler):
             else:
                 self.send_json({'status': 'error', 'error': 'Missing speed'}, 400)
 
+        elif self.path == '/api/vision':
+            if not self.gemini_client:
+                self.send_json({'status': 'error', 'error': 'Gemini not configured'}, 503)
+                return
+
+            # Capture current frame
+            with self.stream_output.condition:
+                frame = self.stream_output.frame
+
+            if not frame:
+                self.send_json({'status': 'error', 'error': 'No frame available'}, 503)
+                return
+
+            try:
+                # Send to Gemini
+                response = self.gemini_client.models.generate_content(
+                    model='gemini-2.0-flash',
+                    contents=[
+                        "Describe what you see in this image from a rover's camera. Be concise.",
+                        types.Part.from_bytes(data=frame, mime_type='image/jpeg'),
+                    ],
+                )
+                self.send_json({'status': 'ok', 'description': response.text})
+            except Exception as e:
+                self.send_json({'status': 'error', 'error': str(e)}, 500)
+
         else:
             self.send_json({'status': 'error', 'error': 'Not found'}, 404)
 
@@ -619,6 +713,16 @@ def main():
     picam2.start_recording(MJPEGEncoder(), FileOutput(stream_output))
     RoverHandler.stream_output = stream_output
     print("Camera streaming started")
+
+    # Load .env file and initialize Gemini
+    load_dotenv()
+    api_key = os.environ.get('GEMINI_API_KEY')
+    if api_key:
+        RoverHandler.gemini_client = genai.Client(api_key=api_key)
+        print("Gemini vision enabled")
+    else:
+        RoverHandler.gemini_client = None
+        print("Warning: GEMINI_API_KEY not set, vision disabled")
 
     # Setup signal handlers for clean shutdown
     def shutdown(signum, frame):
