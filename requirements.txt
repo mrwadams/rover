@@ -1,3 +1,4 @@
 google-genai
+picamera2
 python-dotenv
 smbus2
