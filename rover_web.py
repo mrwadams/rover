@@ -126,11 +126,12 @@ class HornSound:
     def __init__(self):
         # Generate the horn sound
         self.horn_sound = self._generate_horn()
+        self.is_playing = False
 
     def _generate_horn(self):
-        """Generate a car horn sound (dual-tone)."""
+        """Generate a car horn sound (dual-tone) for looping."""
         sample_rate = 44100
-        duration = 0.4  # 400ms honk
+        duration = 0.5  # 500ms loop segment
 
         samples = int(sample_rate * duration)
         t = np.linspace(0, duration, samples, dtype=np.float32)
@@ -141,13 +142,6 @@ class HornSound:
         tone1 = np.sin(2 * np.pi * freq1 * t)
         tone2 = np.sin(2 * np.pi * freq2 * t)
         horn = (tone1 + tone2) / 2  # Mix the two tones
-
-        # Apply fade in/out to avoid clicks (15ms fade)
-        fade_samples = int(sample_rate * 0.015)
-        fade_in = np.linspace(0, 1, fade_samples, dtype=np.float32)
-        fade_out = np.linspace(1, 0, fade_samples, dtype=np.float32)
-        horn[:fade_samples] *= fade_in
-        horn[-fade_samples:] *= fade_out
 
         # Create stereo array: silent left channel, horn on right channel
         stereo = np.zeros((samples, 2), dtype=np.float32)
@@ -160,9 +154,17 @@ class HornSound:
         sound = pygame.sndarray.make_sound(stereo_int)
         return sound
 
-    def honk(self):
-        """Play the horn sound once."""
-        self.horn_sound.play()
+    def start(self):
+        """Start playing the horn in a loop."""
+        if not self.is_playing:
+            self.horn_sound.play(loops=-1)
+            self.is_playing = True
+
+    def stop(self):
+        """Stop the horn."""
+        if self.is_playing:
+            self.horn_sound.stop()
+            self.is_playing = False
 
 # HTML page with embedded CSS and JavaScript
 HTML_PAGE = """<!DOCTYPE html>
@@ -489,7 +491,7 @@ HTML_PAGE = """<!DOCTYPE html>
         <div></div>
     </div>
 
-    <button class="btn horn-btn" id="btn-horn">HORN</button>
+    <button class="btn horn-btn" id="btn-horn">Horn</button>
 
     <div class="speed-control">
         <label>Speed: <span class="speed-value" id="speed-value">50</span>%</label>
@@ -667,17 +669,32 @@ HTML_PAGE = """<!DOCTYPE html>
             });
         });
 
-        // Horn
+        // Horn (press and hold)
         const hornBtn = document.getElementById('btn-horn');
-        hornBtn.addEventListener('click', async () => {
+
+        function startHorn() {
             hornBtn.classList.add('active');
-            try {
-                await fetch('/api/horn', { method: 'POST' });
-            } catch (e) {
-                console.error('Horn error:', e);
-            }
-            setTimeout(() => hornBtn.classList.remove('active'), 200);
-        });
+            fetch('/api/horn', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ action: 'start' })
+            }).catch(e => console.error('Horn error:', e));
+        }
+
+        function stopHorn() {
+            hornBtn.classList.remove('active');
+            fetch('/api/horn', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ action: 'stop' })
+            }).catch(e => console.error('Horn error:', e));
+        }
+
+        hornBtn.addEventListener('mousedown', (e) => { e.preventDefault(); startHorn(); });
+        hornBtn.addEventListener('mouseup', (e) => { e.preventDefault(); stopHorn(); });
+        hornBtn.addEventListener('mouseleave', () => { if (hornBtn.classList.contains('active')) stopHorn(); });
+        hornBtn.addEventListener('touchstart', (e) => { e.preventDefault(); startHorn(); });
+        hornBtn.addEventListener('touchend', (e) => { e.preventDefault(); stopHorn(); });
 
         // Vision analysis
         const visionBtn = document.getElementById('btn-vision');
@@ -843,7 +860,11 @@ class RoverHandler(BaseHTTPRequestHandler):
 
         elif self.path == '/api/horn':
             if self.horn_sound:
-                self.horn_sound.honk()
+                action = data.get('action', 'start')
+                if action == 'start':
+                    self.horn_sound.start()
+                else:
+                    self.horn_sound.stop()
                 self.send_json({'status': 'ok'})
             else:
                 self.send_json({'status': 'error', 'error': 'Horn not available'}, 503)
