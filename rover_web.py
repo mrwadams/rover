@@ -119,6 +119,51 @@ class ReversingSound:
             self.beep_sound.stop()
             self.is_playing = False
 
+
+class HornSound:
+    """Manages the horn sound."""
+
+    def __init__(self):
+        # Generate the horn sound
+        self.horn_sound = self._generate_horn()
+
+    def _generate_horn(self):
+        """Generate a car horn sound (dual-tone)."""
+        sample_rate = 44100
+        duration = 0.4  # 400ms honk
+
+        samples = int(sample_rate * duration)
+        t = np.linspace(0, duration, samples, dtype=np.float32)
+
+        # Dual-tone horn (like a car horn) - F and A notes
+        freq1 = 349  # F4
+        freq2 = 440  # A4
+        tone1 = np.sin(2 * np.pi * freq1 * t)
+        tone2 = np.sin(2 * np.pi * freq2 * t)
+        horn = (tone1 + tone2) / 2  # Mix the two tones
+
+        # Apply fade in/out to avoid clicks (15ms fade)
+        fade_samples = int(sample_rate * 0.015)
+        fade_in = np.linspace(0, 1, fade_samples, dtype=np.float32)
+        fade_out = np.linspace(1, 0, fade_samples, dtype=np.float32)
+        horn[:fade_samples] *= fade_in
+        horn[-fade_samples:] *= fade_out
+
+        # Create stereo array: silent left channel, horn on right channel
+        stereo = np.zeros((samples, 2), dtype=np.float32)
+        stereo[:, 1] = horn  # Right channel only
+
+        # Convert to 16-bit integers and scale
+        stereo_int = (stereo * 32767).astype(np.int16)
+
+        # Create pygame sound from the array
+        sound = pygame.sndarray.make_sound(stereo_int)
+        return sound
+
+    def honk(self):
+        """Play the horn sound once."""
+        self.horn_sound.play()
+
 # HTML page with embedded CSS and JavaScript
 HTML_PAGE = """<!DOCTYPE html>
 <html lang="en">
@@ -231,6 +276,21 @@ HTML_PAGE = """<!DOCTYPE html>
         .vision-btn:disabled {
             opacity: 0.5;
             cursor: not-allowed;
+        }
+        .horn-btn {
+            background: #5c4a1f;
+            border: 2px solid #f59e0b;
+            color: #f59e0b;
+            padding: 12px 24px;
+            font-size: 16px;
+            margin-bottom: 20px;
+            width: 100%;
+            max-width: 400px;
+        }
+        .horn-btn:hover { background: #7a6428; }
+        .horn-btn:active, .horn-btn.active {
+            background: #f59e0b;
+            color: #1a1025;
         }
         .vision-result {
             background: #2d1f3d;
@@ -429,6 +489,8 @@ HTML_PAGE = """<!DOCTYPE html>
         <div></div>
     </div>
 
+    <button class="btn horn-btn" id="btn-horn">HORN</button>
+
     <div class="speed-control">
         <label>Speed: <span class="speed-value" id="speed-value">50</span>%</label>
         <input type="range" id="speed" min="0" max="100" value="50">
@@ -605,6 +667,18 @@ HTML_PAGE = """<!DOCTYPE html>
             });
         });
 
+        // Horn
+        const hornBtn = document.getElementById('btn-horn');
+        hornBtn.addEventListener('click', async () => {
+            hornBtn.classList.add('active');
+            try {
+                await fetch('/api/horn', { method: 'POST' });
+            } catch (e) {
+                console.error('Horn error:', e);
+            }
+            setTimeout(() => hornBtn.classList.remove('active'), 200);
+        });
+
         // Vision analysis
         const visionBtn = document.getElementById('btn-vision');
         const visionResult = document.getElementById('vision-result');
@@ -643,6 +717,7 @@ class RoverHandler(BaseHTTPRequestHandler):
     stream_output = None  # Class-level streaming output
     gemini_client = None  # Class-level Gemini client
     reversing_sound = None  # Class-level reversing sound
+    horn_sound = None  # Class-level horn sound
 
     def log_message(self, format, *args):
         """Custom log format."""
@@ -766,6 +841,13 @@ class RoverHandler(BaseHTTPRequestHandler):
             except Exception as e:
                 self.send_json({'status': 'error', 'error': str(e)}, 500)
 
+        elif self.path == '/api/horn':
+            if self.horn_sound:
+                self.horn_sound.honk()
+                self.send_json({'status': 'ok'})
+            else:
+                self.send_json({'status': 'error', 'error': 'Horn not available'}, 503)
+
         else:
             self.send_json({'status': 'error', 'error': 'Not found'}, 404)
 
@@ -787,15 +869,18 @@ def main():
     rover = Rover()
     RoverHandler.rover = rover
 
-    # Initialize reversing sound
+    # Initialize audio
     print("Initializing audio...")
     try:
         reversing_sound = ReversingSound()
         RoverHandler.reversing_sound = reversing_sound
-        print("Reversing sound enabled")
+        horn_sound = HornSound()
+        RoverHandler.horn_sound = horn_sound
+        print("Audio enabled (reversing beep, horn)")
     except Exception as e:
-        print(f"Warning: Audio initialization failed ({e}), reversing sound disabled")
+        print(f"Warning: Audio initialization failed ({e}), sounds disabled")
         RoverHandler.reversing_sound = None
+        RoverHandler.horn_sound = None
 
     # Initialize camera
     print("Initializing camera...")
