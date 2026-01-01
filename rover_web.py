@@ -62,7 +62,7 @@ class ReversingSound:
         # Using hw:2,0 (the 3.5mm jack) - set via environment before init
         os.environ['SDL_AUDIODRIVER'] = 'alsa'
         os.environ['AUDIODEV'] = 'hw:2,0'
-        pygame.mixer.init(frequency=44100, size=-16, channels=2, buffer=512)
+        pygame.mixer.init(frequency=44100, size=-16, channels=2, buffer=4096)
 
         # Generate the reversing beep sound
         self.beep_sound = self._generate_beep()
