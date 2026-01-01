@@ -100,22 +100,8 @@ class Rover:
         """
         Pivot turn left (rotate in place).
 
-        Turns by running the right motor forward and left motor backward,
-        causing the rover to rotate counter-clockwise.
-
-        Args:
-            speed (int, optional): Motor speed from 0-100. Uses default speed if not specified.
-        """
-        speed = speed or self.speed
-        self._motor('left', 'backward', speed)
-        self._motor('right', 'forward', speed)
-
-    def right(self, speed=None):
-        """
-        Pivot turn right (rotate in place).
-
         Turns by running the left motor forward and right motor backward,
-        causing the rover to rotate clockwise.
+        causing the rover to rotate counter-clockwise.
 
         Args:
             speed (int, optional): Motor speed from 0-100. Uses default speed if not specified.
@@ -123,6 +109,20 @@ class Rover:
         speed = speed or self.speed
         self._motor('left', 'forward', speed)
         self._motor('right', 'backward', speed)
+
+    def right(self, speed=None):
+        """
+        Pivot turn right (rotate in place).
+
+        Turns by running the left motor backward and right motor forward,
+        causing the rover to rotate clockwise.
+
+        Args:
+            speed (int, optional): Motor speed from 0-100. Uses default speed if not specified.
+        """
+        speed = speed or self.speed
+        self._motor('left', 'backward', speed)
+        self._motor('right', 'forward', speed)
 
     def stop(self):
         """
