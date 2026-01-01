@@ -30,6 +30,9 @@ import libcamera
 
 import pygame
 import numpy as np
+from gtts import gTTS
+import tempfile
+from threading import Thread
 
 
 class ThreadingHTTPServer(ThreadingMixIn, HTTPServer):
@@ -165,6 +168,70 @@ class HornSound:
         if self.is_playing:
             self.horn_sound.stop()
             self.is_playing = False
+
+
+class TextToSpeech:
+    """Text-to-speech using Google TTS, output to right channel."""
+
+    def __init__(self):
+        self.is_speaking = False
+        self._speech_channel = pygame.mixer.Channel(1)  # Dedicated channel for TTS
+
+    def speak(self, text):
+        """Speak the given text (non-blocking, runs in background thread)."""
+        if self.is_speaking:
+            return  # Don't interrupt current speech
+
+        def _speak_thread():
+            self.is_speaking = True
+            try:
+                # Generate speech audio
+                tts = gTTS(text=text, lang='en')
+
+                # Save to temp file
+                with tempfile.NamedTemporaryFile(suffix='.mp3', delete=False) as f:
+                    temp_path = f.name
+                    tts.save(temp_path)
+
+                # Load and play via pygame
+                speech_sound = pygame.mixer.Sound(temp_path)
+
+                # Get the sound data and convert to right-channel only
+                sound_array = pygame.sndarray.array(speech_sound)
+
+                # Handle mono or stereo input
+                if len(sound_array.shape) == 1:
+                    # Mono - create stereo with right channel only
+                    stereo = np.zeros((len(sound_array), 2), dtype=sound_array.dtype)
+                    stereo[:, 1] = sound_array
+                else:
+                    # Stereo - mix to mono, output on right channel
+                    mono = np.mean(sound_array, axis=1).astype(sound_array.dtype)
+                    stereo = np.zeros_like(sound_array)
+                    stereo[:, 1] = mono
+
+                right_channel_sound = pygame.sndarray.make_sound(stereo)
+                self._speech_channel.play(right_channel_sound)
+
+                # Wait for playback to finish
+                while self._speech_channel.get_busy():
+                    pygame.time.wait(100)
+
+                # Cleanup temp file
+                os.unlink(temp_path)
+
+            except Exception as e:
+                print(f"TTS error: {e}")
+            finally:
+                self.is_speaking = False
+
+        Thread(target=_speak_thread, daemon=True).start()
+
+    def stop(self):
+        """Stop any current speech."""
+        self._speech_channel.stop()
+        self.is_speaking = False
+
 
 # HTML page with embedded CSS and JavaScript
 HTML_PAGE = """<!DOCTYPE html>
@@ -735,6 +802,7 @@ class RoverHandler(BaseHTTPRequestHandler):
     gemini_client = None  # Class-level Gemini client
     reversing_sound = None  # Class-level reversing sound
     horn_sound = None  # Class-level horn sound
+    tts = None  # Class-level text-to-speech
 
     def log_message(self, format, *args):
         """Custom log format."""
@@ -854,7 +922,12 @@ class RoverHandler(BaseHTTPRequestHandler):
                         types.Part.from_bytes(data=frame, mime_type='image/jpeg'),
                     ],
                 )
-                self.send_json({'status': 'ok', 'description': response.text})
+                description = response.text
+                self.send_json({'status': 'ok', 'description': description})
+
+                # Speak the description
+                if self.tts:
+                    self.tts.speak(description)
             except Exception as e:
                 self.send_json({'status': 'error', 'error': str(e)}, 500)
 
@@ -897,11 +970,14 @@ def main():
         RoverHandler.reversing_sound = reversing_sound
         horn_sound = HornSound()
         RoverHandler.horn_sound = horn_sound
-        print("Audio enabled (reversing beep, horn)")
+        tts = TextToSpeech()
+        RoverHandler.tts = tts
+        print("Audio enabled (reversing beep, horn, TTS)")
     except Exception as e:
         print(f"Warning: Audio initialization failed ({e}), sounds disabled")
         RoverHandler.reversing_sound = None
         RoverHandler.horn_sound = None
+        RoverHandler.tts = None
 
     # Initialize camera
     print("Initializing camera...")

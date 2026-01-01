@@ -4,3 +4,4 @@ python-dotenv
 smbus2
 pygame
 numpy
+gTTS
