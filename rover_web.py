@@ -28,6 +28,9 @@ from picamera2.encoders import MJPEGEncoder
 from picamera2.outputs import FileOutput
 import libcamera
 
+import pygame
+import numpy as np
+
 
 class ThreadingHTTPServer(ThreadingMixIn, HTTPServer):
     """HTTP server that handles each request in a separate thread."""
@@ -46,6 +49,75 @@ class StreamingOutput(io.BufferedIOBase):
             self.frame = buf
             self.condition.notify_all()
         return len(buf)
+
+
+class ReversingSound:
+    """Manages the vehicle reversing beep sound."""
+
+    def __init__(self):
+        # Initialize pygame mixer for audio output
+        # Using hw:2,0 (the 3.5mm jack) - set via environment before init
+        os.environ['SDL_AUDIODRIVER'] = 'alsa'
+        os.environ['AUDIODEV'] = 'hw:2,0'
+        pygame.mixer.init(frequency=44100, size=-16, channels=2, buffer=512)
+
+        # Generate the reversing beep sound
+        self.beep_sound = self._generate_beep()
+        self.is_playing = False
+
+    def _generate_beep(self):
+        """Generate a classic reversing beep pattern (beep-silence-beep-silence...)"""
+        sample_rate = 44100
+        beep_freq = 1000  # 1kHz tone
+        beep_duration = 0.3  # 300ms beep
+        silence_duration = 0.3  # 300ms silence
+
+        # Generate one beep cycle (beep + silence)
+        beep_samples = int(sample_rate * beep_duration)
+        silence_samples = int(sample_rate * silence_duration)
+        total_samples = beep_samples + silence_samples
+
+        # Create time array for the beep portion
+        t = np.linspace(0, beep_duration, beep_samples, dtype=np.float32)
+
+        # Generate sine wave for beep
+        beep = np.sin(2 * np.pi * beep_freq * t)
+
+        # Apply fade in/out to avoid clicks (20ms fade)
+        fade_samples = int(sample_rate * 0.02)
+        fade_in = np.linspace(0, 1, fade_samples, dtype=np.float32)
+        fade_out = np.linspace(1, 0, fade_samples, dtype=np.float32)
+        beep[:fade_samples] *= fade_in
+        beep[-fade_samples:] *= fade_out
+
+        # Create silence
+        silence = np.zeros(silence_samples, dtype=np.float32)
+
+        # Combine beep and silence
+        mono = np.concatenate([beep, silence])
+
+        # Create stereo array: silent left channel, beep on right channel
+        stereo = np.zeros((total_samples, 2), dtype=np.float32)
+        stereo[:, 1] = mono  # Right channel only
+
+        # Convert to 16-bit integers and scale
+        stereo_int = (stereo * 32767).astype(np.int16)
+
+        # Create pygame sound from the array
+        sound = pygame.sndarray.make_sound(stereo_int)
+        return sound
+
+    def start(self):
+        """Start playing the reversing beep in a loop."""
+        if not self.is_playing:
+            self.beep_sound.play(loops=-1)  # -1 = infinite loop
+            self.is_playing = True
+
+    def stop(self):
+        """Stop the reversing beep."""
+        if self.is_playing:
+            self.beep_sound.stop()
+            self.is_playing = False
 
 # HTML page with embedded CSS and JavaScript
 HTML_PAGE = """<!DOCTYPE html>
@@ -570,6 +642,7 @@ class RoverHandler(BaseHTTPRequestHandler):
     rover = None  # Class-level rover instance
     stream_output = None  # Class-level streaming output
     gemini_client = None  # Class-level Gemini client
+    reversing_sound = None  # Class-level reversing sound
 
     def log_message(self, format, *args):
         """Custom log format."""
@@ -636,14 +709,24 @@ class RoverHandler(BaseHTTPRequestHandler):
             try:
                 if command == 'stop':
                     self.rover.stop()
+                    if self.reversing_sound:
+                        self.reversing_sound.stop()
                 elif command == 'forward':
                     self.rover.forward(speed)
+                    if self.reversing_sound:
+                        self.reversing_sound.stop()
                 elif command == 'backward':
                     self.rover.backward(speed)
+                    if self.reversing_sound:
+                        self.reversing_sound.start()
                 elif command == 'left':
                     self.rover.left(speed)
+                    if self.reversing_sound:
+                        self.reversing_sound.stop()
                 elif command == 'right':
                     self.rover.right(speed)
+                    if self.reversing_sound:
+                        self.reversing_sound.stop()
 
                 self.send_json({'status': 'ok', 'command': command})
             except Exception as e:
@@ -704,6 +787,16 @@ def main():
     rover = Rover()
     RoverHandler.rover = rover
 
+    # Initialize reversing sound
+    print("Initializing audio...")
+    try:
+        reversing_sound = ReversingSound()
+        RoverHandler.reversing_sound = reversing_sound
+        print("Reversing sound enabled")
+    except Exception as e:
+        print(f"Warning: Audio initialization failed ({e}), reversing sound disabled")
+        RoverHandler.reversing_sound = None
+
     # Initialize camera
     print("Initializing camera...")
     picam2 = Picamera2()
@@ -729,6 +822,9 @@ def main():
         print("\nShutting down...")
         picam2.stop_recording()
         rover.stop()
+        if RoverHandler.reversing_sound:
+            RoverHandler.reversing_sound.stop()
+        pygame.mixer.quit()
         sys.exit(0)
 
     signal.signal(signal.SIGINT, shutdown)
@@ -744,6 +840,9 @@ def main():
     finally:
         picam2.stop_recording()
         rover.stop()
+        if RoverHandler.reversing_sound:
+            RoverHandler.reversing_sound.stop()
+        pygame.mixer.quit()
 
 
 if __name__ == '__main__':
